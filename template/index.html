@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PM Canvas</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Inter, "Segoe UI", sans-serif;
+            color: #292846;
+            background: #f5f3fc;
+            --page-bg: #f5f3fc;
+            --page-glow: #e8e9ff;
+            --text: #292846;
+            --surface: #fff;
+            --border: #e4e0f1;
+            --shadow: #443b7010;
+            --header-start: #6e63a5;
+            --header-end: #5f83b7;
+            --muted: #73738f;
+            --field-bg: #fdfdff;
+            --block-bg: #faf9fe;
+            --item-bg: #f3f2fa;
+            --item-hover-bg: #e9e8f6;
+            --item-text: #444361;
+            --active-bg: #7189bd;
+            --secondary-bg: #ecebfb;
+            --secondary-hover-bg: #dfdef7;
+            --secondary-text: #4c5288;
+            --focus: #aaa1e8;
+            --danger-text: #a32626;
+            --danger-bg: #fff0ef;
+        }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            color: #ecebfa;
+            background: #171726;
+            --page-bg: #171726;
+            --page-glow: #262747;
+            --text: #ecebfa;
+            --surface: #222235;
+            --border: #393952;
+            --shadow: #05051055;
+            --header-start: #4b4377;
+            --header-end: #3d5f86;
+            --muted: #b0aec8;
+            --field-bg: #191928;
+            --block-bg: #25253a;
+            --item-bg: #2b2b42;
+            --item-hover-bg: #373751;
+            --item-text: #e3e1f4;
+            --active-bg: #52699e;
+            --secondary-bg: #38374f;
+            --secondary-hover-bg: #484762;
+            --secondary-text: #d7d4ff;
+            --focus: #aaa1e8;
+            --danger-text: #ffb6b0;
+            --danger-bg: #47292d;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            background:
+                radial-gradient(ellipse at top right, var(--page-glow) 0, transparent 38rem),
+                var(--page-bg);
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 22px clamp(18px, 5vw, 64px);
+            background: linear-gradient(120deg, var(--header-start), var(--header-end));
+            color: white;
+        }
+
+        header h1 { margin: 0 0 5px; font-size: 1.5rem; }
+        header p { margin: 0; color: #e8eaff; }
+        .theme-toggle {
+            flex: 0 0 auto;
+            color: white;
+            border: 1px solid #ffffff66;
+            background: #ffffff20;
+        }
+        .theme-toggle:hover { background: #ffffff35; }
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        #account-email { color: #e8eaff; }
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(210px, 270px) minmax(0, 1fr);
+            gap: 24px;
+            max-width: 1440px;
+            margin: 28px auto;
+            padding: 0 24px;
+        }
+
+        aside, .editor {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 28px var(--shadow);
+        }
+
+        aside { align-self: start; padding: 18px; }
+        aside h2 { margin: 0 0 14px; font-size: 1rem; }
+        #canvas-list { display: grid; gap: 8px; }
+
+        button {
+            border: 0;
+            border-radius: 7px;
+            padding: 10px 14px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:focus-visible, input:focus-visible, textarea:focus-visible {
+            outline: 3px solid var(--focus);
+            outline-offset: 2px;
+        }
+
+        .primary { color: white; background: #7065aa; }
+        .primary:hover { background: #5f5598; }
+        .secondary { color: var(--secondary-text); background: var(--secondary-bg); }
+        .secondary:hover { background: var(--secondary-hover-bg); }
+        .danger { color: var(--danger-text); background: var(--danger-bg); }
+        .canvas-item {
+            width: 100%;
+            overflow: hidden;
+            text-align: left;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--item-text);
+            background: var(--item-bg);
+        }
+        .canvas-item:hover { background: var(--item-hover-bg); }
+        .canvas-item.active { color: white; background: var(--active-bg); }
+        .muted { color: var(--muted); font-size: .9rem; }
+
+        .editor { min-width: 0; padding: clamp(18px, 3vw, 32px); }
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .toolbar h2 { margin: 0; font-size: 1.15rem; }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+        label { display: block; margin-bottom: 7px; font-weight: 650; }
+        input, textarea {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            padding: 10px 12px;
+            color: var(--text);
+            font: inherit;
+            background: var(--field-bg);
+        }
+        input { margin-bottom: 16px; }
+        textarea { min-height: 115px; resize: vertical; }
+        .description { min-height: 72px; }
+
+        #sections {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 20px;
+        }
+        .block {
+            min-width: 0;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--block-bg);
+        }
+        .block h3 { margin: 0 0 9px; font-size: .95rem; }
+        .block textarea { min-height: 120px; }
+        #status { min-height: 1.5em; margin: 14px 0 0; }
+        #status[data-error="true"] { color: var(--danger-text); }
+        #auth-panel[hidden], #app-main[hidden] { display: none; }
+        .auth-panel {
+            width: min(440px, calc(100% - 32px));
+            margin: clamp(32px, 8vh, 80px) auto;
+            padding: clamp(22px, 5vw, 36px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: 0 10px 28px var(--shadow);
+        }
+        .auth-panel h2 { margin-top: 0; }
+        .auth-panel form { display: grid; gap: 10px; }
+        .auth-panel input { margin-bottom: 6px; }
+        .auth-panel .primary { margin-top: 8px; }
+        .auth-switch {
+            padding: 8px 0;
+            color: var(--secondary-text);
+            background: transparent;
+        }
+        .auth-switch:hover { text-decoration: underline; }
+        #auth-status { min-height: 1.5em; margin: 12px 0 0; }
+        #auth-status[data-error="true"] { color: var(--danger-text); }
+
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; }
+            #canvas-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            #sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 560px) {
+            header { align-items: flex-start; flex-direction: column; }
+            .header-actions { width: 100%; justify-content: space-between; }
+            main { margin: 16px auto; padding: 0 12px; }
+            .toolbar { align-items: flex-start; flex-direction: column; }
+            #canvas-list, #sections { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>PM Canvas</h1>
+            <p>Organize as ideias e planeje seu projeto em um só lugar.</p>
+        </div>
+        <div class="header-actions">
+            <span id="account-email" hidden></span>
+            <button class="secondary" id="logout" type="button" hidden>Sair</button>
+            <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Ativar tema escuro">
+                Tema escuro
+            </button>
+        </div>
+    </header>
+
+    <section class="auth-panel" id="auth-panel" aria-labelledby="auth-heading" hidden>
+        <h2 id="auth-heading">Entrar</h2>
+        <p class="muted" id="auth-description">Entre para acessar seus projetos.</p>
+        <form id="auth-form">
+            <label for="auth-email">E-mail</label>
+            <input id="auth-email" type="email" autocomplete="email" required>
+            <label for="auth-password">Senha</label>
+            <input id="auth-password" type="password" minlength="8" autocomplete="current-password" required>
+            <button class="primary" id="auth-submit" type="submit">Entrar</button>
+        </form>
+        <p id="auth-status" class="muted" role="status" aria-live="polite"></p>
+        <button class="auth-switch" id="auth-switch" type="button">Criar conta</button>
+    </section>
+
+    <main id="app-main" hidden>
+        <aside aria-label="Seus canvases">
+            <h2>Meus projetos</h2>
+            <button class="primary" id="new-canvas" type="button" style="width:100%;margin-bottom:12px">
+                + Novo canvas
+            </button>
+            <div id="canvas-list"></div>
+        </aside>
+
+        <section class="editor" aria-labelledby="editor-heading">
+            <div class="toolbar">
+                <h2 id="editor-heading">Novo projeto</h2>
+                <div class="actions">
+                    <button class="secondary" id="delete-canvas" type="button" hidden>Excluir</button>
+                    <button class="primary" id="save-canvas" type="button">Salvar canvas</button>
+                </div>
+            </div>
+
+            <label for="title">Nome do projeto</label>
+            <input id="title" maxlength="160" placeholder="Ex.: Implantação de sistema" required>
+
+            <label for="description">Descrição</label>
+            <textarea id="description" class="description" placeholder="Resumo do projeto (opcional)"></textarea>
+
+            <div id="sections"></div>
+            <p id="status" class="muted" role="status" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <script>
+        const blocks = [
+            ["justificativa", "Justificativa"],
+            ["objetivo_smart", "Objetivo SMART"],
+            ["beneficios", "Benefícios"],
+            ["produto", "Produto"],
+            ["requisitos", "Requisitos"],
+            ["equipe", "Equipe"],
+            ["premissas", "Premissas"],
+            ["grupos_entregas", "Grupos de entregas"],
+            ["restricoes", "Restrições"],
+            ["riscos", "Riscos"],
+            ["linha_tempo", "Linha do tempo"],
+            ["custos", "Custos"]
+        ];
+
+        let currentCanvasId = null;
+        let canvasList = [];
+        const $ = (selector) => document.querySelector(selector);
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.dataset.theme = isDark ? "dark" : "light";
+            $("#theme-toggle").textContent = isDark ? "Tema claro" : "Tema escuro";
+            $("#theme-toggle").setAttribute(
+                "aria-label",
+                isDark ? "Ativar tema claro" : "Ativar tema escuro"
+            );
+            localStorage.setItem("pm-canvas-theme", isDark ? "dark" : "light");
+        }
+
+        setTheme(localStorage.getItem("pm-canvas-theme") === "dark" ? "dark" : "light");
+        $("#theme-toggle").addEventListener("click", () => {
+            setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+        });
+
+        $("#sections").innerHTML = blocks.map(([key, label]) => `
+            <article class="block">
+                <h3><label for="section-${key}">${label}</label></h3>
+                <textarea id="section-${key}" data-section="${key}" aria-label="${label}"></textarea>
+            </article>
+        `).join("");
+
+        async function api(url, options = {}) {
+            let response;
+            try {
+                response = await fetch(url, {
+                    headers: { "Content-Type": "application/json" },
+                    ...options
+                });
+            } catch (error) {
+                if (error instanceof TypeError) {
+                    const message = location.protocol === "file:"
+                        ? "Não abra o HTML diretamente. Inicie o Flask e acesse http://127.0.0.1:5000."
+                        : `Não foi possível conectar ao servidor em ${location.origin}. Confira se o Flask está rodando e atualize a página.`;
+                    throw new Error(message);
+                }
+                throw error;
+            }
+            if (!response.ok) {
+                const result = await response.json().catch(() => ({}));
+                throw new Error(result.error || `Erro na requisição (${response.status}).`);
+            }
+            return response.status === 204 ? null : response.json();
+        }
+
+        function setStatus(message, isError = false) {
+            $("#status").textContent = message;
+            $("#status").dataset.error = String(isError);
+        }
+
+        function resetEditor() {
+            currentCanvasId = null;
+            $("#title").value = "";
+            $("#description").value = "";
+            document.querySelectorAll("[data-section]").forEach((field) => field.value = "");
+            $("#editor-heading").textContent = "Novo projeto";
+            $("#delete-canvas").hidden = true;
+            setStatus("");
+            renderCanvasList();
+        }
+
+        function renderCanvasList(canvases = canvasList) {
+            canvasList = canvases;
+            const list = $("#canvas-list");
+            list.replaceChildren();
+            if (canvases.length === 0) {
+                const message = document.createElement("p");
+                message.className = "muted";
+                message.textContent = "Nenhum canvas salvo ainda.";
+                list.append(message);
+                return;
+            }
+
+            canvases.forEach((canvas) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = `canvas-item${canvas.id === currentCanvasId ? " active" : ""}`;
+                button.textContent = canvas.title;
+                button.title = canvas.title;
+                button.addEventListener("click", () => loadCanvas(canvas.id));
+                list.append(button);
+            });
+        }
+
+        async function refreshCanvasList() {
+            renderCanvasList(await api("/api/canvases"));
+        }
+
+        async function loadCanvas(id) {
+            try {
+                const canvas = await api(`/api/canvases/${id}`);
+                currentCanvasId = canvas.id;
+                $("#title").value = canvas.title;
+                $("#description").value = canvas.description;
+                document.querySelectorAll("[data-section]").forEach((field) => {
+                    field.value = canvas.sections[field.dataset.section] || "";
+                });
+                $("#editor-heading").textContent = "Editar projeto";
+                $("#delete-canvas").hidden = false;
+                setStatus("");
+                await refreshCanvasList();
+            } catch (error) {
+                setStatus(error.message, true);
+            }
+        }
+
+        async function saveCanvas() {
+            const sections = {};
+            document.querySelectorAll("[data-section]").forEach((field) => {
+                sections[field.dataset.section] = field.value;
+            });
+            const payload = {
+                title: $("#title").value,
+                description: $("#description").value,
+                sections
+            };
+
+            try {
+                const saved = await api(
+                    currentCanvasId ? `/api/canvases/${currentCanvasId}` : "/api/canvases",
+                    {
+                        method: currentCanvasId ? "PUT" : "POST",
+                        body: JSON.stringify(payload)
+                    }
+                );
+                currentCanvasId = saved.id;
+                $("#editor-heading").textContent = "Editar projeto";
+                $("#delete-canvas").hidden = false;
+                setStatus("Canvas salvo com sucesso.");
+                await refreshCanvasList();
+            } catch (error) {
+                setStatus(error.message, true);
+            }
+        }
+
+        async function deleteCanvas() {
+            if (!currentCanvasId || !window.confirm("Excluir este canvas?")) return;
+            try {
+                await api(`/api/canvases/${currentCanvasId}`, { method: "DELETE" });
+                resetEditor();
+                await refreshCanvasList();
+                setStatus("Canvas excluído.");
+            } catch (error) {
+                setStatus(error.message, true);
+            }
+        }
+
+        let authMode = "login";
+
+        function setAuthStatus(message, isError = false) {
+            $("#auth-status").textContent = message;
+            $("#auth-status").dataset.error = String(isError);
+        }
+
+        function renderAuthMode() {
+            const isRegister = authMode === "register";
+            $("#auth-heading").textContent = isRegister ? "Criar conta" : "Entrar";
+            $("#auth-description").textContent = isRegister
+                ? "Crie uma conta para guardar seus projetos."
+                : "Entre para acessar seus projetos.";
+            $("#auth-submit").textContent = isRegister ? "Criar conta" : "Entrar";
+            $("#auth-password").autocomplete = isRegister ? "new-password" : "current-password";
+            $("#auth-switch").textContent = isRegister
+                ? "Já tem conta? Entrar"
+                : "Ainda não tem conta? Criar conta";
+            setAuthStatus("");
+        }
+
+        function showAuthPanel() {
+            $("#auth-panel").hidden = false;
+            $("#app-main").hidden = true;
+            $("#account-email").hidden = true;
+            $("#logout").hidden = true;
+        }
+
+        function showApp(user) {
+            $("#auth-panel").hidden = true;
+            $("#app-main").hidden = false;
+            $("#account-email").textContent = user.email;
+            $("#account-email").hidden = false;
+            $("#logout").hidden = false;
+        }
+
+        async function initializeApp() {
+            const result = await api("/api/session");
+            if (!result.user) {
+                showAuthPanel();
+                return;
+            }
+            showApp(result.user);
+            await refreshCanvasList();
+        }
+
+        async function submitAuth(event) {
+            event.preventDefault();
+            const endpoint = authMode === "register" ? "/api/register" : "/api/login";
+            try {
+                const result = await api(endpoint, {
+                    method: "POST",
+                    body: JSON.stringify({
+                        email: $("#auth-email").value,
+                        password: $("#auth-password").value
+                    })
+                });
+                showApp(result.user);
+                $("#auth-form").reset();
+                try {
+                    await refreshCanvasList();
+                    setStatus("");
+                } catch (error) {
+                    setStatus(error.message, true);
+                }
+            } catch (error) {
+                setAuthStatus(error.message, true);
+            }
+        }
+
+        async function logout() {
+            try {
+                await api("/api/logout", { method: "POST" });
+                resetEditor();
+                showAuthPanel();
+                $("#auth-form").reset();
+                authMode = "login";
+                renderAuthMode();
+            } catch (error) {
+                setStatus(error.message, true);
+            }
+        }
+
+        $("#new-canvas").addEventListener("click", resetEditor);
+        $("#save-canvas").addEventListener("click", saveCanvas);
+        $("#delete-canvas").addEventListener("click", deleteCanvas);
+        $("#auth-form").addEventListener("submit", submitAuth);
+        $("#auth-switch").addEventListener("click", () => {
+            authMode = authMode === "login" ? "register" : "login";
+            renderAuthMode();
+        });
+        $("#logout").addEventListener("click", logout);
+        renderAuthMode();
+        initializeApp().catch((error) => {
+            showAuthPanel();
+            setAuthStatus(error.message, true);
+        });
+    </script>
+</body>
+</html>
