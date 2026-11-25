@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -23,6 +24,27 @@ SECTIONS = (
     "custos",
 )
 
+DEFAULT_DIAGRAM_JSON = '{"type":"mechanical","nodes":[],"connections":[]}'
+DIAGRAM_TYPES = {"mechanical", "electrical"}
+DIAGRAM_SYMBOLS = {
+    "start",
+    "process",
+    "decision",
+    "io",
+    "motor",
+    "pump",
+    "valve",
+    "tank",
+    "sensor",
+    "source_ac",
+    "battery",
+    "breaker",
+    "switch",
+    "lamp",
+    "resistor",
+    "ground",
+}
+
 
 def get_db():
     if "db" not in g:
@@ -39,42 +61,56 @@ def close_db(_error=None):
 
 
 def initialize_db(app):
-    with sqlite3.connect(app.config["DATABASE"]) as db:
-        db.execute("PRAGMA foreign_keys = ON")
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS canvases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER REFERENCES users(id),
-                title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                sections TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        columns = {
-            row[1] for row in db.execute("PRAGMA table_info(canvases)").fetchall()
-        }
-        if "user_id" not in columns:
+    db = sqlite3.connect(app.config["DATABASE"])
+    try:
+        with db:
+            db.execute("PRAGMA foreign_keys = ON")
             db.execute(
-                "ALTER TABLE canvases ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS canvases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER REFERENCES users(id),
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    sections TEXT NOT NULL,
+                    diagram TEXT NOT NULL DEFAULT '{"type":"mechanical","nodes":[],"connections":[]}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            columns = {
+                row[1] for row in db.execute("PRAGMA table_info(canvases)").fetchall()
+            }
+            if "user_id" not in columns:
+                db.execute(
+                    "ALTER TABLE canvases ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+            if "diagram" not in columns:
+                db.execute(
+                    "ALTER TABLE canvases ADD COLUMN diagram TEXT NOT NULL DEFAULT "
+                    "'{\"type\":\"mechanical\",\"nodes\":[],\"connections\":[]}'"
+                )
+    finally:
+        db.close()
 
 
 def empty_sections():
     return {section: "" for section in SECTIONS}
+
+
+def empty_diagram():
+    return json.loads(DEFAULT_DIAGRAM_JSON)
 
 
 def canvas_to_dict(row):
@@ -83,9 +119,95 @@ def canvas_to_dict(row):
         "title": row["title"],
         "description": row["description"],
         "sections": json.loads(row["sections"]),
+        "diagram": json.loads(row["diagram"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def parse_diagram_payload(value):
+    if not isinstance(value, dict):
+        return None, "O diagrama deve ser enviado como objeto JSON."
+
+    diagram_type = value.get("type")
+    nodes = value.get("nodes")
+    connections = value.get("connections")
+    if not isinstance(diagram_type, str) or diagram_type not in DIAGRAM_TYPES:
+        return None, "Escolha um tipo de diagrama válido."
+    if not isinstance(nodes, list) or len(nodes) > 300:
+        return None, "O diagrama deve ter no máximo 300 símbolos."
+    if not isinstance(connections, list) or len(connections) > 600:
+        return None, "O diagrama deve ter no máximo 600 conexões."
+
+    clean_nodes = []
+    node_ids = set()
+    for node in nodes:
+        if not isinstance(node, dict):
+            return None, "Cada símbolo do diagrama deve ser um objeto."
+        node_id = node.get("id")
+        symbol_type = node.get("type")
+        label = node.get("label")
+        x = node.get("x")
+        y = node.get("y")
+        if not isinstance(node_id, str) or not node_id.strip() or len(node_id) > 64:
+            return None, "Cada símbolo precisa ter um identificador válido."
+        if node_id in node_ids:
+            return None, "O diagrama contém identificadores de símbolo repetidos."
+        if not isinstance(symbol_type, str) or symbol_type not in DIAGRAM_SYMBOLS:
+            return None, "O diagrama contém um tipo de símbolo desconhecido."
+        if not isinstance(label, str) or len(label) > 100:
+            return None, "O rótulo de cada símbolo deve ter até 100 caracteres."
+        if (
+            isinstance(x, bool)
+            or not isinstance(x, (int, float))
+            or (isinstance(x, float) and not math.isfinite(x))
+            or not 0 <= x <= 1200
+        ):
+            return None, "A posição horizontal de um símbolo é inválida."
+        if (
+            isinstance(y, bool)
+            or not isinstance(y, (int, float))
+            or (isinstance(y, float) and not math.isfinite(y))
+            or not 0 <= y <= 700
+        ):
+            return None, "A posição vertical de um símbolo é inválida."
+        node_ids.add(node_id)
+        clean_nodes.append(
+            {
+                "id": node_id,
+                "type": symbol_type,
+                "label": label,
+                "x": x,
+                "y": y,
+            }
+        )
+
+    clean_connections = []
+    connection_pairs = set()
+    for connection in connections:
+        if not isinstance(connection, dict):
+            return None, "Cada conexão deve ser um objeto."
+        source = connection.get("from")
+        target = connection.get("to")
+        if (
+            not isinstance(source, str)
+            or not isinstance(target, str)
+            or source not in node_ids
+            or target not in node_ids
+            or source == target
+        ):
+            return None, "Uma conexão aponta para símbolos inválidos."
+        pair = (source, target)
+        if pair in connection_pairs:
+            return None, "O diagrama contém conexões repetidas."
+        connection_pairs.add(pair)
+        clean_connections.append({"from": source, "to": target})
+
+    return {
+        "type": diagram_type,
+        "nodes": clean_nodes,
+        "connections": clean_connections,
+    }, None
 
 
 def parse_canvas_payload(data, existing=None):
@@ -96,10 +218,14 @@ def parse_canvas_payload(data, existing=None):
         "title": "",
         "description": "",
         "sections": empty_sections(),
+        "diagram": empty_diagram(),
     }
     title = data.get("title", existing["title"])
     description = data.get("description", existing["description"])
     sections = data.get("sections", existing["sections"])
+    diagram, diagram_error = parse_diagram_payload(
+        data.get("diagram", existing["diagram"])
+    )
 
     if not isinstance(title, str) or not title.strip():
         return None, "O título é obrigatório."
@@ -113,6 +239,8 @@ def parse_canvas_payload(data, existing=None):
         return None, "O canvas contém um bloco desconhecido."
     if any(not isinstance(value, str) for value in sections.values()):
         return None, "O conteúdo de cada bloco deve ser um texto."
+    if diagram_error:
+        return None, diagram_error
 
     clean_sections = empty_sections()
     clean_sections.update(sections)
@@ -120,6 +248,7 @@ def parse_canvas_payload(data, existing=None):
         "title": title.strip(),
         "description": description.strip(),
         "sections": clean_sections,
+        "diagram": diagram,
     }, None
 
 
@@ -157,7 +286,7 @@ def create_app(test_config=None):
             return jsonify({"error": "Faça login para ver seus projetos."}), 401
         rows = get_db().execute(
             """
-            SELECT id, title, description, sections, created_at, updated_at
+            SELECT id, title, description, sections, diagram, created_at, updated_at
             FROM canvases
             WHERE user_id = ?
             ORDER BY updated_at DESC, id DESC
@@ -254,14 +383,15 @@ def create_app(test_config=None):
         db = get_db()
         cursor = db.execute(
             """
-            INSERT INTO canvases (user_id, title, description, sections)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO canvases (user_id, title, description, sections, diagram)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 user_id,
                 payload["title"],
                 payload["description"],
                 json.dumps(payload["sections"], ensure_ascii=False),
+                json.dumps(payload["diagram"], ensure_ascii=False),
             ),
         )
         db.commit()
@@ -306,7 +436,7 @@ def create_app(test_config=None):
         db.execute(
             """
             UPDATE canvases
-            SET title = ?, description = ?, sections = ?,
+            SET title = ?, description = ?, sections = ?, diagram = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND user_id = ?
             """,
@@ -314,6 +444,7 @@ def create_app(test_config=None):
                 payload["title"],
                 payload["description"],
                 json.dumps(payload["sections"], ensure_ascii=False),
+                json.dumps(payload["diagram"], ensure_ascii=False),
                 canvas_id,
                 user_id,
             ),
