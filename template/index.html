@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PM Canvas</title>
+    <title>Diagramas de Engenharia</title>
     <style>
         :root {
             color-scheme: light;
@@ -168,6 +168,105 @@
         input { margin-bottom: 16px; }
         textarea { min-height: 115px; resize: vertical; }
         .description { min-height: 72px; }
+        select {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            padding: 10px 12px;
+            color: var(--text);
+            font: inherit;
+            background: var(--field-bg);
+        }
+
+        .diagram-controls {
+            display: grid;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .diagram-type-control { max-width: 360px; }
+        .diagram-type-control label { margin-bottom: 7px; }
+        .diagram-tools, .symbol-palette, .node-properties {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .symbol-palette {
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--block-bg);
+        }
+        .symbol-palette button.selected, .diagram-tools button.selected {
+            color: white;
+            background: var(--active-bg);
+        }
+        .diagram-stage {
+            overflow: auto;
+            margin-top: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--field-bg);
+        }
+        #diagram-canvas {
+            display: block;
+            width: 100%;
+            min-width: 760px;
+            height: auto;
+            touch-action: none;
+        }
+        .diagram-node { cursor: grab; }
+        .diagram-node:active { cursor: grabbing; }
+        .node-shape {
+            fill: var(--surface);
+            stroke: #7180aa;
+            stroke-width: 2;
+        }
+        .diagram-node.selected .node-shape {
+            stroke: #7065aa;
+            stroke-width: 3;
+        }
+        .node-glyph {
+            fill: var(--text);
+            font-size: 15px;
+            font-weight: 700;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+        }
+        .node-label {
+            fill: var(--text);
+            font-size: 13px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+        }
+        .diagram-connection {
+            fill: none;
+            stroke: #68789e;
+            stroke-width: 2.5;
+            marker-end: url(#arrowhead);
+        }
+        .node-properties {
+            margin-top: 12px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--block-bg);
+        }
+        .node-properties label { margin: 0; }
+        .node-properties input {
+            flex: 1 1 220px;
+            width: auto;
+            margin: 0;
+        }
+        .diagram-help { margin: 8px 0 0; }
+        #planning-details { margin-top: 22px; }
+        #planning-details summary {
+            color: var(--secondary-text);
+            font-weight: 650;
+            cursor: pointer;
+        }
 
         #sections {
             display: grid;
@@ -226,8 +325,8 @@
 <body>
     <header>
         <div>
-            <h1>PM Canvas</h1>
-            <p>Organize as ideias e planeje seu projeto em um só lugar.</p>
+            <h1>Diagramas de Engenharia</h1>
+            <p>Crie fluxogramas e diagramas mecânicos ou elétricos.</p>
         </div>
         <div class="header-actions">
             <span id="account-email" hidden></span>
@@ -253,10 +352,10 @@
     </section>
 
     <main id="app-main" hidden>
-        <aside aria-label="Seus canvases">
+        <aside aria-label="Seus projetos">
             <h2>Meus projetos</h2>
             <button class="primary" id="new-canvas" type="button" style="width:100%;margin-bottom:12px">
-                + Novo canvas
+                + Novo diagrama
             </button>
             <div id="canvas-list"></div>
         </aside>
@@ -266,17 +365,61 @@
                 <h2 id="editor-heading">Novo projeto</h2>
                 <div class="actions">
                     <button class="secondary" id="delete-canvas" type="button" hidden>Excluir</button>
-                    <button class="primary" id="save-canvas" type="button">Salvar canvas</button>
+                    <button class="primary" id="save-canvas" type="button">Salvar projeto</button>
                 </div>
             </div>
 
             <label for="title">Nome do projeto</label>
-            <input id="title" maxlength="160" placeholder="Ex.: Implantação de sistema" required>
+            <input id="title" maxlength="160" placeholder="Ex.: Sistema de bombeamento" required>
 
             <label for="description">Descrição</label>
-            <textarea id="description" class="description" placeholder="Resumo do projeto (opcional)"></textarea>
+            <textarea id="description" class="description" placeholder="Resumo do diagrama (opcional)"></textarea>
 
-            <div id="sections"></div>
+            <section class="diagram-controls" aria-label="Ferramentas do diagrama">
+                <div class="diagram-type-control">
+                    <label for="diagram-type">Tipo de diagrama</label>
+                    <select id="diagram-type">
+                        <option value="mechanical">Mecânico</option>
+                        <option value="electrical">Elétrico</option>
+                    </select>
+                </div>
+                <div class="diagram-tools" aria-label="Ações do diagrama">
+                    <button class="secondary" id="select-mode" type="button">Selecionar e mover</button>
+                    <button class="secondary" id="connect-mode" type="button">Conectar símbolos</button>
+                    <button class="secondary" id="delete-node" type="button" disabled>Remover símbolo</button>
+                    <button class="secondary" id="export-diagram" type="button">Baixar SVG</button>
+                </div>
+                <div id="symbol-palette" class="symbol-palette" aria-label="Símbolos disponíveis"></div>
+                <p id="diagram-help" class="muted diagram-help" role="status" aria-live="polite">
+                    Escolha um símbolo e clique na prancheta para adicioná-lo. Arraste para mover.
+                </p>
+                <div class="diagram-stage">
+                    <svg id="diagram-canvas" viewBox="0 0 1200 700" role="application"
+                         aria-label="Prancheta do diagrama">
+                        <defs>
+                            <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+                                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#d8d8e6" stroke-width="1"></path>
+                            </pattern>
+                            <marker id="arrowhead" markerWidth="10" markerHeight="8"
+                                    refX="8" refY="4" orient="auto" markerUnits="strokeWidth">
+                                <path d="M 0 0 L 10 4 L 0 8 z" fill="#68789e"></path>
+                            </marker>
+                        </defs>
+                        <rect id="diagram-background" width="1200" height="700" fill="url(#grid)"></rect>
+                        <g id="connections-layer"></g>
+                        <g id="nodes-layer"></g>
+                    </svg>
+                </div>
+                <div class="node-properties">
+                    <label for="node-label">Rótulo do símbolo</label>
+                    <input id="node-label" maxlength="100" placeholder="Selecione um símbolo" disabled>
+                </div>
+            </section>
+
+            <details id="planning-details">
+                <summary>Campos de planejamento do canvas antigo (opcional)</summary>
+                <div id="sections"></div>
+            </details>
             <p id="status" class="muted" role="status" aria-live="polite"></p>
         </section>
     </main>
@@ -297,8 +440,48 @@
             ["custos", "Custos"]
         ];
 
+        const commonSymbols = [
+            { type: "start", label: "Início/Fim", shape: "ellipse" },
+            { type: "process", label: "Processo", shape: "rect" },
+            { type: "decision", label: "Decisão", shape: "diamond" },
+            { type: "io", label: "Entrada/Saída", shape: "io" }
+        ];
+        const symbolPalettes = {
+            mechanical: [
+                ...commonSymbols,
+                { type: "motor", label: "Motor", shape: "circle", glyph: "M" },
+                { type: "pump", label: "Bomba", shape: "circle", glyph: "P" },
+                { type: "valve", label: "Válvula", shape: "valve" },
+                { type: "tank", label: "Reservatório", shape: "tank" },
+                { type: "sensor", label: "Sensor", shape: "rect", glyph: "S" }
+            ],
+            electrical: [
+                ...commonSymbols,
+                { type: "source_ac", label: "Fonte AC", shape: "circle", glyph: "~" },
+                { type: "battery", label: "Bateria", shape: "rect", glyph: "BAT" },
+                { type: "breaker", label: "Disjuntor", shape: "rect", glyph: "DJ" },
+                { type: "switch", label: "Chave", shape: "rect", glyph: "S" },
+                { type: "lamp", label: "Lâmpada", shape: "circle-cross" },
+                { type: "motor", label: "Motor", shape: "circle", glyph: "M" },
+                { type: "resistor", label: "Resistor", shape: "resistor", glyph: "R" },
+                { type: "ground", label: "Aterramento", shape: "ground" }
+            ]
+        };
+        const allSymbols = Object.fromEntries(
+            [...new Map(
+                Object.values(symbolPalettes).flat().map((symbol) => [symbol.type, symbol])
+            )]
+        );
+        const diagramSize = { width: 1200, height: 700 };
         let currentCanvasId = null;
         let canvasList = [];
+        let diagram = emptyDiagram();
+        let toolMode = "select";
+        let selectedSymbolType = null;
+        let selectedNodeId = null;
+        let connectionStartId = null;
+        let draggingNodeId = null;
+        let dragOffset = { x: 0, y: 0 };
         const $ = (selector) => document.querySelector(selector);
 
         function setTheme(theme) {
@@ -315,6 +498,355 @@
         setTheme(localStorage.getItem("pm-canvas-theme") === "dark" ? "dark" : "light");
         $("#theme-toggle").addEventListener("click", () => {
             setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+        });
+
+        function emptyDiagram() {
+            return { type: "mechanical", nodes: [], connections: [] };
+        }
+
+        function normalizeDiagram(value) {
+            if (!value || typeof value !== "object") return emptyDiagram();
+            return {
+                type: value.type === "electrical" ? "electrical" : "mechanical",
+                nodes: Array.isArray(value.nodes) ? value.nodes : [],
+                connections: Array.isArray(value.connections) ? value.connections : []
+            };
+        }
+
+        function createSvgElement(name, attributes = {}) {
+            const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+            Object.entries(attributes).forEach(([key, value]) => {
+                element.setAttribute(key, String(value));
+            });
+            return element;
+        }
+
+        function getSymbol(type) {
+            return allSymbols[type] || { type, label: "Símbolo", shape: "rect" };
+        }
+
+        function getSvgPoint(event) {
+            const svg = $("#diagram-canvas");
+            const matrix = svg.getScreenCTM();
+            if (!matrix) return { x: 600, y: 350 };
+            const point = svg.createSVGPoint();
+            point.x = event.clientX;
+            point.y = event.clientY;
+            const transformed = point.matrixTransform(matrix.inverse());
+            return {
+                x: Math.max(70, Math.min(diagramSize.width - 70, transformed.x)),
+                y: Math.max(40, Math.min(diagramSize.height - 40, transformed.y))
+            };
+        }
+
+        function setToolMode(mode, symbolType = null) {
+            toolMode = mode;
+            selectedSymbolType = symbolType;
+            connectionStartId = null;
+            $("#select-mode").classList.toggle("selected", mode === "select");
+            $("#connect-mode").classList.toggle("selected", mode === "connect");
+            renderPalette();
+            if (mode === "connect") {
+                $("#diagram-help").textContent = "Clique em dois símbolos para criar uma conexão com seta.";
+            } else if (mode === "place") {
+                $("#diagram-help").textContent = "Clique na prancheta para adicionar o símbolo escolhido.";
+            } else {
+                $("#diagram-help").textContent = "Arraste os símbolos para mover. Selecione um símbolo para editar o rótulo.";
+            }
+        }
+
+        function renderPalette() {
+            const palette = $("#symbol-palette");
+            palette.replaceChildren();
+            symbolPalettes[diagram.type].forEach((symbol) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = `secondary${toolMode === "place" && selectedSymbolType === symbol.type ? " selected" : ""}`;
+                button.textContent = `+ ${symbol.label}`;
+                button.addEventListener("click", () => setToolMode("place", symbol.type));
+                palette.append(button);
+            });
+        }
+
+        function renderNodeShape(group, symbol) {
+            if (symbol.shape === "ellipse") {
+                group.append(createSvgElement("ellipse", { class: "node-shape", cx: 0, cy: 0, rx: 66, ry: 34 }));
+                return;
+            }
+            if (symbol.shape === "diamond") {
+                group.append(createSvgElement("polygon", {
+                    class: "node-shape",
+                    points: "0,-39 70,0 0,39 -70,0"
+                }));
+                return;
+            }
+            if (symbol.shape === "io") {
+                group.append(createSvgElement("polygon", {
+                    class: "node-shape",
+                    points: "-55,-34 65,-34 55,34 -65,34"
+                }));
+                return;
+            }
+            if (symbol.shape === "circle" || symbol.shape === "circle-cross") {
+                group.append(createSvgElement("circle", { class: "node-shape", cx: 0, cy: 0, r: 34 }));
+                if (symbol.shape === "circle-cross") {
+                    group.append(createSvgElement("path", {
+                        class: "node-shape",
+                        d: "M -15 -15 L 15 15 M 15 -15 L -15 15",
+                        style: "fill:none"
+                    }));
+                }
+                return;
+            }
+            if (symbol.shape === "valve") {
+                group.append(createSvgElement("path", {
+                    class: "node-shape",
+                    d: "M -34 -25 L 0 0 L -34 25 Z M 34 -25 L 0 0 L 34 25 Z",
+                    style: "fill:none"
+                }));
+                return;
+            }
+            if (symbol.shape === "tank") {
+                group.append(createSvgElement("path", {
+                    class: "node-shape",
+                    d: "M -38 -28 Q 0 -42 38 -28 L 38 25 Q 0 39 -38 25 Z M -38 -28 Q 0 -14 38 -28",
+                    style: "fill:none"
+                }));
+                return;
+            }
+            if (symbol.shape === "resistor") {
+                group.append(createSvgElement("rect", { class: "node-shape", x: -55, y: -25, width: 110, height: 50, rx: 5 }));
+                return;
+            }
+            if (symbol.shape === "ground") {
+                group.append(createSvgElement("path", {
+                    class: "node-shape",
+                    d: "M 0 -30 L 0 4 M -32 4 L 32 4 M -22 15 L 22 15 M -10 26 L 10 26",
+                    style: "fill:none"
+                }));
+                return;
+            }
+            group.append(createSvgElement("rect", {
+                class: "node-shape",
+                x: -62,
+                y: -33,
+                width: 124,
+                height: 66,
+                rx: symbol.type === "start" ? 30 : 8
+            }));
+        }
+
+        function renderNode(node) {
+            const symbol = getSymbol(node.type);
+            const group = createSvgElement("g", {
+                class: `diagram-node${node.id === selectedNodeId ? " selected" : ""}`,
+                transform: `translate(${node.x} ${node.y})`,
+                tabindex: 0,
+                role: "button",
+                "aria-label": `${symbol.label}: ${node.label || "sem rótulo"}`
+            });
+            renderNodeShape(group, symbol);
+
+            const compactSymbols = new Set(["start", "process", "decision", "io"]);
+            if (compactSymbols.has(node.type)) {
+                const label = createSvgElement("text", { class: "node-label", x: 0, y: 0 });
+                label.textContent = node.label;
+                group.append(label);
+            } else {
+                if (symbol.glyph) {
+                    const glyph = createSvgElement("text", {
+                        class: "node-glyph",
+                        x: 0,
+                        y: symbol.shape === "circle" ? 0 : -5
+                    });
+                    glyph.textContent = symbol.glyph;
+                    group.append(glyph);
+                }
+                const label = createSvgElement("text", { class: "node-label", x: 0, y: 39 });
+                label.textContent = node.label;
+                group.append(label);
+            }
+
+            group.addEventListener("pointerdown", (event) => {
+                event.stopPropagation();
+                if (toolMode === "connect") {
+                    connectNode(node.id);
+                    return;
+                }
+                if (toolMode !== "select") return;
+                selectedNodeId = node.id;
+                draggingNodeId = node.id;
+                const point = getSvgPoint(event);
+                dragOffset = { x: node.x - point.x, y: node.y - point.y };
+                $("#diagram-canvas").setPointerCapture(event.pointerId);
+                renderDiagram();
+            });
+            group.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                if (toolMode === "connect") {
+                    connectNode(node.id);
+                } else {
+                    selectedNodeId = node.id;
+                    renderDiagram();
+                }
+            });
+            return group;
+        }
+
+        function connectNode(nodeId) {
+            if (!connectionStartId) {
+                connectionStartId = nodeId;
+                selectedNodeId = nodeId;
+                $("#diagram-help").textContent = "Agora clique no símbolo de destino.";
+                renderDiagram();
+                return;
+            }
+            if (connectionStartId === nodeId) {
+                $("#diagram-help").textContent = "Escolha outro símbolo como destino.";
+                return;
+            }
+            const duplicate = diagram.connections.some(
+                (connection) => connection.from === connectionStartId && connection.to === nodeId
+            );
+            if (!duplicate) {
+                diagram.connections.push({ from: connectionStartId, to: nodeId });
+            }
+            selectedNodeId = nodeId;
+            connectionStartId = null;
+            renderDiagram();
+            $("#diagram-help").textContent = duplicate
+                ? "Essa conexão já existe."
+                : "Conexão criada. Você pode continuar ligando outros símbolos.";
+        }
+
+        function renderDiagram() {
+            const svg = $("#diagram-canvas");
+            const nodesLayer = $("#nodes-layer");
+            const connectionsLayer = $("#connections-layer");
+            const nodeById = new Map(diagram.nodes.map((node) => [node.id, node]));
+            connectionsLayer.replaceChildren();
+            diagram.connections.forEach((connection) => {
+                const from = nodeById.get(connection.from);
+                const to = nodeById.get(connection.to);
+                if (!from || !to) return;
+                const targetSymbol = getSymbol(to.type);
+                const targetHalfWidth = ["circle", "circle-cross"].includes(targetSymbol.shape)
+                    ? 36
+                    : targetSymbol.shape === "tank" || targetSymbol.shape === "valve"
+                        ? 42
+                        : targetSymbol.shape === "ground"
+                            ? 34
+                            : 70;
+                const direction = to.x >= from.x ? 1 : -1;
+                const targetX = to.x - direction * targetHalfWidth;
+                const middleX = Math.round((from.x + targetX) / 2);
+                const path = createSvgElement("path", {
+                    class: "diagram-connection",
+                    d: `M ${from.x} ${from.y} H ${middleX} V ${to.y} H ${targetX}`
+                });
+                connectionsLayer.append(path);
+            });
+            nodesLayer.replaceChildren(...diagram.nodes.map(renderNode));
+
+            const selectedNode = diagram.nodes.find((node) => node.id === selectedNodeId);
+            const labelInput = $("#node-label");
+            labelInput.disabled = !selectedNode;
+            $("#delete-node").disabled = !selectedNode;
+            if (document.activeElement !== labelInput) {
+                labelInput.value = selectedNode ? selectedNode.label : "";
+            }
+            if (document.activeElement !== $("#diagram-type")) {
+                $("#diagram-type").value = diagram.type;
+            }
+        }
+
+        $("#diagram-canvas").addEventListener("pointerdown", (event) => {
+            if (event.target.closest(".diagram-node")) return;
+            const point = getSvgPoint(event);
+            if (toolMode === "place" && selectedSymbolType) {
+                const symbol = getSymbol(selectedSymbolType);
+                const node = {
+                    id: typeof crypto.randomUUID === "function"
+                        ? crypto.randomUUID()
+                        : `node-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                    type: symbol.type,
+                    label: symbol.label,
+                    x: Math.round(point.x),
+                    y: Math.round(point.y)
+                };
+                diagram.nodes.push(node);
+                selectedNodeId = node.id;
+                setToolMode("select");
+                renderDiagram();
+                return;
+            }
+            if (toolMode === "select") {
+                selectedNodeId = null;
+                renderDiagram();
+            }
+        });
+
+        $("#diagram-canvas").addEventListener("pointermove", (event) => {
+            if (!draggingNodeId) return;
+            const node = diagram.nodes.find((item) => item.id === draggingNodeId);
+            if (!node) return;
+            const point = getSvgPoint(event);
+            node.x = Math.round(Math.max(70, Math.min(diagramSize.width - 70, point.x + dragOffset.x)));
+            node.y = Math.round(Math.max(40, Math.min(diagramSize.height - 40, point.y + dragOffset.y)));
+            renderDiagram();
+        });
+        $("#diagram-canvas").addEventListener("pointerup", () => {
+            draggingNodeId = null;
+        });
+        $("#diagram-canvas").addEventListener("pointercancel", () => {
+            draggingNodeId = null;
+        });
+
+        $("#diagram-type").addEventListener("change", (event) => {
+            diagram.type = event.target.value;
+            setToolMode("select");
+            renderDiagram();
+        });
+        $("#select-mode").addEventListener("click", () => setToolMode("select"));
+        $("#connect-mode").addEventListener("click", () => setToolMode("connect"));
+        $("#node-label").addEventListener("input", (event) => {
+            const node = diagram.nodes.find((item) => item.id === selectedNodeId);
+            if (!node) return;
+            node.label = event.target.value;
+            renderDiagram();
+        });
+        $("#delete-node").addEventListener("click", () => {
+            if (!selectedNodeId) return;
+            diagram.nodes = diagram.nodes.filter((node) => node.id !== selectedNodeId);
+            diagram.connections = diagram.connections.filter(
+                (connection) => connection.from !== selectedNodeId && connection.to !== selectedNodeId
+            );
+            selectedNodeId = null;
+            renderDiagram();
+        });
+        $("#export-diagram").addEventListener("click", () => {
+            const svg = $("#diagram-canvas").cloneNode(true);
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            svg.querySelectorAll(".diagram-node").forEach((node) => node.classList.remove("selected"));
+            const styles = createSvgElement("style");
+            styles.textContent = `
+                .node-shape{fill:#fff;stroke:#7180aa;stroke-width:2}
+                .node-glyph{fill:#292846;font:700 15px sans-serif;text-anchor:middle;dominant-baseline:middle}
+                .node-label{fill:#292846;font:13px sans-serif;text-anchor:middle;dominant-baseline:middle}
+                .diagram-connection{fill:none;stroke:#68789e;stroke-width:2.5;marker-end:url(#arrowhead)}
+            `;
+            svg.insertBefore(styles, svg.firstChild);
+            const content = new XMLSerializer().serializeToString(svg);
+            const file = new Blob([content], { type: "image/svg+xml;charset=utf-8" });
+            const url = URL.createObjectURL(file);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${$("#title").value.trim() || "diagrama"}.svg`;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         });
 
         $("#sections").innerHTML = blocks.map(([key, label]) => `
@@ -354,9 +886,13 @@
 
         function resetEditor() {
             currentCanvasId = null;
+            diagram = emptyDiagram();
+            selectedNodeId = null;
+            setToolMode("select");
             $("#title").value = "";
             $("#description").value = "";
             document.querySelectorAll("[data-section]").forEach((field) => field.value = "");
+            renderDiagram();
             $("#editor-heading").textContent = "Novo projeto";
             $("#delete-canvas").hidden = true;
             setStatus("");
@@ -370,7 +906,7 @@
             if (canvases.length === 0) {
                 const message = document.createElement("p");
                 message.className = "muted";
-                message.textContent = "Nenhum canvas salvo ainda.";
+                message.textContent = "Nenhum projeto salvo ainda.";
                 list.append(message);
                 return;
             }
@@ -399,6 +935,10 @@
                 document.querySelectorAll("[data-section]").forEach((field) => {
                     field.value = canvas.sections[field.dataset.section] || "";
                 });
+                diagram = normalizeDiagram(canvas.diagram);
+                selectedNodeId = null;
+                setToolMode("select");
+                renderDiagram();
                 $("#editor-heading").textContent = "Editar projeto";
                 $("#delete-canvas").hidden = false;
                 setStatus("");
@@ -416,7 +956,8 @@
             const payload = {
                 title: $("#title").value,
                 description: $("#description").value,
-                sections
+                sections,
+                diagram
             };
 
             try {
@@ -430,7 +971,7 @@
                 currentCanvasId = saved.id;
                 $("#editor-heading").textContent = "Editar projeto";
                 $("#delete-canvas").hidden = false;
-                setStatus("Canvas salvo com sucesso.");
+                setStatus("Projeto salvo com sucesso.");
                 await refreshCanvasList();
             } catch (error) {
                 setStatus(error.message, true);
@@ -443,7 +984,7 @@
                 await api(`/api/canvases/${currentCanvasId}`, { method: "DELETE" });
                 resetEditor();
                 await refreshCanvasList();
-                setStatus("Canvas excluído.");
+                setStatus("Projeto excluído.");
             } catch (error) {
                 setStatus(error.message, true);
             }
@@ -542,6 +1083,8 @@
         });
         $("#logout").addEventListener("click", logout);
         renderAuthMode();
+        setToolMode("select");
+        renderDiagram();
         initializeApp().catch((error) => {
             showAuthPanel();
             setAuthStatus(error.message, true);
